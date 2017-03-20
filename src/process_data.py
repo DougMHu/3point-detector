@@ -1,40 +1,72 @@
-# Import HMC55883L library that wraps I2C communication
 from i2clibraries import i2c_hmc5883l
 import sys, time, argparse
+import statistics as stats
 
-# Parse arguments
-parser = argparse.ArgumentParser(description='Take magnetometer samples.')
-parser.add_argument('--num', default=100, type=int)
-parser.add_argument('--dur', type=int)
-parser.add_argument('--freq', default=10, type=int)
-parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'),
+def parseCSV(infile):
+    
+    # Read input csv file
+    csv_output = infile.read()
+
+    # Create a list of samples for each x, y, z
+    x = []
+    y = []
+    z = []
+    output_lines = csv_output.split('\n')
+    for line in output_lines:
+        if line:
+            sample = line.split(',')
+            x.append(float(sample[0]))
+            y.append(float(sample[1]))
+            z.append(float(sample[2]))
+
+    # Return the lists of samples
+    return x, y, z
+
+def calculateCalibration(infile):
+
+    # Parse input csv file
+    xs, ys, zs = parseCSV(infile)
+
+    # Find median of each axis
+    x_calib = stats.median(xs)
+    y_calib = stats.median(ys)
+    z_calib = stats.median(zs)
+
+    # Return calibration values
+    return x_calib, y_calib, z_calib 
+
+def writeCalibratedSamples(num, freq, infile, outfile):
+
+    # Calculate calibration constants
+    xc, yc, zc = calculateCalibration(infile)
+
+    # Instantiate I2C communication and set HMC5883L to continuous mode
+    hmc5883l = i2c_hmc5883l.i2c_hmc5883l(1)
+    hmc5883l.setContinuousMode()
+
+    sleep_time = 1/freq
+    # Take num samples of x, y, and z magnitudes
+    for i in list(range(num)):
+        x, y, z = hmc5883l.getAxes()
+        x -= xc
+        y -= yc
+        z -= zc
+        outfile.write('%.2f,%.2f,%.2f\n' % (x, y, z))
+        time.sleep(sleep_time)
+
+if __name__ == '__main__':
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Take magnetometer samples.')
+    parser.add_argument('--num', default=100, type=int)
+    parser.add_argument('--dur', type=int)
+    parser.add_argument('--freq', default=10, type=int)
+    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
+                    default=sys.stdin)
+    parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'),
                     default=sys.stdout)
-args = parser.parse_args()
-if args.dur:
-    args.num = args.dur * args.freq
-
-def write_out(outfile, line):
-    # with open(outfile, 'w') as f:
-    #     f.write(line+'\n')
-    outfile.write(line+'\n')
-
-# Instantiate I2C communication and set HMC5883L to continuous mode
-hmc5883l = i2c_hmc5883l.i2c_hmc5883l(1)
-hmc5883l.setContinuousMode()
-
-# Set declination to correct for heading (adds declination to heading)
-# hmc5883l.setDeclination(12,4)
-
-# Print magnetometer x, y, z, and heading
-# Heading is angle away from North in clockwise direction, i.e. arcTan(y,x)
-# print(hmc5883l)
-
-# Prepare output file
-write_out(args.outfile, 'x,y,z')
-
-sleep_time = 1/args.freq
-# Take num samples of x, y, and z magnitudes
-for i in list(range(args.num)):
-    x, y, z = hmc5883l.getAxes()
-    write_out(args.outfile, '%f,%f,%f' % (x, y, z))
-    time.sleep(sleep_time)
+    args = parser.parse_args()
+    if args.dur:
+        args.num = args.dur * args.freq
+    
+    # Take samples and write them to outfile
+    writeCalibratedSamples(args.num, args.freq, args.infile, args.outfile)
