@@ -44,6 +44,11 @@ def writeCalibratedSamples(num, freq, infile, outfile):
     hmc5883l = i2c_hmc5883l.i2c_hmc5883l(1)
     hmc5883l.setContinuousMode()
 
+    # Store and return sample lists
+    xs = []
+    ys = []
+    zs = []
+
     sleep_time = 1/freq
     # Take num samples of x, y, and z magnitudes
     for i in list(range(num)):
@@ -52,7 +57,12 @@ def writeCalibratedSamples(num, freq, infile, outfile):
         y -= yc
         z -= zc
         outfile.write('%.2f,%.2f,%.2f\n' % (x, y, z))
+        xs.append(x)
+        ys.append(y)
+        zs.append(z)
         time.sleep(sleep_time)
+
+    return xs, ys, zs
 
 if __name__ == '__main__':
     # Parse arguments
@@ -69,4 +79,9 @@ if __name__ == '__main__':
         args.num = args.dur * args.freq
     
     # Take samples and write them to outfile
-    writeCalibratedSamples(args.num, args.freq, args.infile, args.outfile)
+    xs, ys, zs = writeCalibratedSamples(args.num, args.freq, args.infile, args.outfile)
+
+    # Print median calibrated measurements
+    print(stats.median(xs))
+    print(stats.median(ys))
+    print(stats.median(zs))
